@@ -1,0 +1,14 @@
+Código,Nombre,Cantidad,Precio Unitario,Subtotal
+7501010,Detergente X,5,1.50,7.50
+7501020,Shampoo Y,3,2.80,8.40
+7501030,Cloro Z,2,0.95,1.90
+7501040,Suavizante A,1,2.20,2.20
+,,,TOTAL,20.00
+
+Notas para usar esta plantilla:
+1. Usar EXACTAMENTE estos nombres de columnas: Código, Nombre, Cantidad, Precio Unitario, Subtotal
+2. Códigos deben existir en la BD (cargar productos primero)
+3. Cantidad y Precio deben ser números
+4. Subtotal = Cantidad × Precio Unitario
+5. Guardar como: VENTAS_YYYY-MM-DD.xlsx o .csv
+6. Cargar en la app al final del día
