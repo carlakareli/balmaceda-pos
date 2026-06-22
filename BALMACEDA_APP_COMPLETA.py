@@ -102,7 +102,7 @@ if 'user_role' not in st.session_state:
 # ============================================================================
 
 def login_page():
-    """Pantalla de login"""
+    """Pantalla de login segura - Lee credenciales desde los Secrets de Streamlit"""
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -115,18 +115,19 @@ def login_page():
         password = st.text_input("Contraseña", type="password", key="password")
         
         if st.button("Acceder"):
-            # Validar en BD
-            result = execute_query(
-                "SELECT id, username, nombre_completo, rol FROM usuarios WHERE username = %s AND contraseña = %s AND activo = true",
-                (username, password),
-                fetch=True
-            )
+            # --- PROTECCIÓN ABSOLUTA EN REPOSITORIOS PÚBLICOS ---
+            # Recanalizamos la autenticación para leer EXCLUSIVAMENTE de Streamlit Secrets (Nube)
+            # Si por alguna razón no los encuentra, fallará en vez de exponer una clave por defecto.
+            usuario_seguro = os.getenv('ADMIN_USER')
+            clave_segura = os.getenv('ADMIN_PASS')
             
-            if result:
+            if not usuario_seguro or not clave_segura:
+                st.error("❌ Error de configuración: No se encontraron las credenciales seguras en los Secrets de la nube.")
+            elif username == usuario_seguro and password == clave_segura:
                 st.session_state.authenticated = True
-                st.session_state.user = result[0]['username']
-                st.session_state.user_role = result[0]['rol']
-                st.success("✅ Bienvenido!")
+                st.session_state.user = "admin"
+                st.session_state.user_role = "administrador"
+                st.success("✅ ¡Bienvenido al sistema!")
                 st.rerun()
             else:
                 st.error("❌ Usuario o contraseña incorrectos")
