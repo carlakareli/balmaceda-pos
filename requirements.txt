@@ -1,6 +1,7 @@
 streamlit
-psycopg2
 pandas
 plotly
 python-dotenv
 openpyxl
+sqlalchemy
+psycopg2
