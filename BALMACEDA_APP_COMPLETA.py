@@ -213,10 +213,11 @@ def dashboard():
         st.dataframe(df, use_container_width=True)
 
 def modulo_productos():
-    """Gestión de productos con listas desplegables siempre activas y resistentes"""
+    """Gestión de productos con pestañas independientes y blindaje de conexión"""
     st.title("📦 Productos")
     
-    tab1, tab2, tab3 = st.tabs(["Listar", "Crear", "Buscar"])
+    # 4 pestañas limpias e independientes
+    tab1, tab2, tab3, tab4 = st.tabs(["Listar", "Crear Producto", "Buscar", "📁 Categorías y Marcas"])
     
     with tab1:
         st.subheader("Inventario de Productos")
@@ -239,40 +240,6 @@ def modulo_productos():
     
     with tab2:
         st.subheader("Crear Nuevo Producto")
-        
-        # --- SUB-MÓDULO: CREACIÓN RÁPIDA DE CATEGORÍAS Y MARCAS ---
-        st.markdown("### ➕ Añadir Nueva Categoría o Marca")
-        col_pop1, col_pop2 = st.columns(2)
-        
-        with col_pop1:
-            with st.expander("🆕 Registrar Nueva Categoría"):
-                nueva_cat = st.text_input("Nombre de la Categoría", key="txt_nueva_cat")
-                if st.button("Guardar Categoría", key="btn_guardar_cat"):
-                    if nueva_cat.strip():
-                        existe_cat = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nueva_cat.strip(),), fetch=True)
-                        if not existe_cat:
-                            execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nueva_cat.strip(),))
-                            st.success(f"¡Categoría '{nueva_cat.strip()}' añadida exitosamente!")
-                        else:
-                            st.warning("Esa categoría ya existe en la lista.")
-                    else:
-                        st.error("Escribe un nombre válido.")
-
-        with col_pop2:
-            with st.expander("🆕 Registrar Nueva Marca"):
-                nueva_marca = st.text_input("Nombre de la Marca", key="txt_nueva_marca")
-                if st.button("Guardar Marca", key="btn_guardar_marca"):
-                    if nueva_marca.strip():
-                        existe_marca = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nueva_marca.strip(),), fetch=True)
-                        if not existe_marca:
-                            execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nueva_marca.strip(),))
-                            st.success(f"¡Marca '{nueva_marca.strip()}' añadida exitosamente!")
-                        else:
-                            st.warning("Esa marca ya existe en la lista.")
-                    else:
-                        st.error("Escribe un nombre válido.")
-
-        st.markdown("---")
         
         # --- SECCIÓN DE ESCANEO OPCIONAL ---
         col_cod1, col_cod2 = st.columns([3, 1])
@@ -323,7 +290,7 @@ def modulo_productos():
                         st.info("Función para editar en desarrollo.")
                 st.markdown("---")
 
-        # --- DISTRIBUCIÓN DEL FORMULARIO PRINCIPAL ---
+        # --- FORMULARIO PRINCIPAL ---
         st.markdown("### 📝 Datos de la Ficha del Producto")
         col_form_izq, col_form_der = st.columns(2)
         
@@ -333,21 +300,17 @@ def modulo_productos():
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # --- CONSULTA FLEXIBLE DE CATEGORÍAS (NUNCA SE BLOQUEA) ---
+            # Consultas totalmente aisladas de categorías y marcas
             categoria_opt = execute_query("SELECT nombre FROM categorias ORDER BY nombre", fetch=True)
             listado_cats = [c['nombre'] for c in categoria_opt] if categoria_opt else []
-            
-            # Si la lista está vacía por temas de red, damos una opción por defecto sin deshabilitar
             if not listado_cats:
-                listado_cats = ["⚠️ No hay categorías creadas arriba aún"]
+                listado_cats = ["⚠️ No hay categorías creadas aún. Ve a la pestaña de Categorías."]
             categoria = st.selectbox("Categoría", listado_cats)
             
-            # --- CONSULTA FLEXIBLE DE MARCAS (NUNCA SE BLOQUEA) ---
             marca_opt = execute_query("SELECT nombre FROM marcas ORDER BY nombre", fetch=True)
             listado_marcas = [m['nombre'] for m in marca_opt] if marca_opt else []
-            
             if not listado_marcas:
-                listado_marcas = ["⚠️ No hay marcas creadas arriba aún"]
+                listado_marcas = ["⚠️ No hay marcas creadas aún. Ve a la pestaña de Categorías."]
             marca = st.selectbox("Marca", listado_marcas)
             
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
@@ -360,8 +323,7 @@ def modulo_productos():
             activo_bool = True if estado_input == "Activo" else False
             
             unidad_medida = st.selectbox("Unidad de Medida", ["Unidad", "Pack", "Caja", "Litro", "Kg"])
-            
-            descripcion = st.text_area("Descripción / Observaciones (Opcional)", placeholder="Ej: Producto estacional, no mantener más de 20 unidades...")
+            descripcion = st.text_area("Descripción / Observaciones (Opcional)", placeholder="Ej: Producto estacional...")
             
             st.text_input("Fecha de Creación (Automática)", value=datetime.now().strftime("%d-%m-%Y %H:%M"), disabled=True)
             st.text_input("Usuario Creador (Automático)", value=st.session_state.get('user', 'Carla'), disabled=True)
@@ -369,22 +331,21 @@ def modulo_productos():
         st.markdown("---")
         
         if st.button("💾 Guardar Producto en Balmaceda Market", type="primary"):
-            # Validaciones críticas finales antes de guardar
             if not codigo:
                 st.error("❌ El Código de Barras es obligatorio.")
             elif not nombre:
-                st.error("❌ El Nombre del Producto es obligatorio y no puede quedar vacío.")
+                st.error("❌ El Nombre del Producto es obligatorio.")
             elif "⚠️" in categoria or not listado_cats:
-                st.error("❌ Debe seleccionar una Categoría válida. Créala primero en la sección superior.")
+                st.error("❌ Debe seleccionar una Categoría válida. Créala primero en la pestaña 'Categorías y Marcas'.")
             elif "⚠️" in marca or not listado_marcas:
-                st.error("❌ Debe seleccionar una Marca válida. Créala primero en la sección superior.")
+                st.error("❌ Debe seleccionar una Marca válida. Créala primero en la pestaña 'Categorías y Marcas'.")
             elif precio_venta <= 0:
                 st.error("❌ El Precio de Venta debe ser mayor a cero ($).")
             else:
                 try:
                     duplicado = execute_query("SELECT id FROM productos WHERE codigo_barras = %s", (codigo,), fetch=True)
                     if duplicado:
-                        st.error("❌ Error: Ese código de barras ya fue guardado hace instantes.")
+                        st.error("❌ Error: Ese código de barras ya fue guardado.")
                     else:
                         cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
                         marca_id = execute_query("SELECT id FROM marcas WHERE nombre = %s", (marca,), fetch=True)[0]['id']
@@ -398,7 +359,7 @@ def modulo_productos():
                             VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                         """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min, activo_bool, unidad_medida, descripcion, usuario_actual))
                         
-                        st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente en Neon con stock inicial en cero.")
+                        st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente.")
                         st.balloons()
                 except Exception as e:
                     st.error(f"❌ Error al guardar en PostgreSQL: {e}")
@@ -422,6 +383,41 @@ def modulo_productos():
                 st.dataframe(df, use_container_width=True)
             else:
                 st.warning("No se encontraron productos")
+
+    # --- NUEVA PESTAÑA COMPLETAMENTE AISLADA Y SEGURA ---
+    with tab4:
+        st.subheader("📁 Administración de Categorías y Marcas")
+        st.info("Crea aquí los maestros. Al guardarlos, aparecerán inmediatamente en el formulario de creación de productos.")
+        
+        col_cat, col_mar = st.columns(2)
+        
+        with col_cat:
+            st.markdown("### 🆕 Crear Nueva Categoría")
+            cat_input = st.text_input("Nombre de la Categoría", placeholder="Ej: Bebidas, Lácteos, Fiambrería...", key="pestaña_txt_cat")
+            if st.button("💾 Guardar Categoría", key="pestaña_btn_cat", type="secondary"):
+                if cat_input.strip():
+                    existencia = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (cat_input.strip(),), fetch=True)
+                    if not existencia:
+                        execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (cat_input.strip(),))
+                        st.success(f"✅ Categoría '{cat_input.strip()}' guardada en Neon.")
+                    else:
+                        st.warning("⚠️ Esta categoría ya existe.")
+                else:
+                    st.error("Escribe un nombre válido.")
+                    
+        with col_mar:
+            st.markdown("### 🆕 Crear Nueva Marca")
+            marca_input = st.text_input("Nombre de la Marca", placeholder="Ej: Coca-Cola, Nestlé, Soprole...", key="pestaña_txt_marca")
+            if st.button("💾 Guardar Marca", key="pestaña_btn_marca", type="secondary"):
+                if marca_input.strip():
+                    existencia = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (marca_input.strip(),), fetch=True)
+                    if not existencia:
+                        execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (marca_input.strip(),))
+                        st.success(f"✅ Marca '{marca_input.strip()}' guardada en Neon.")
+                    else:
+                        st.warning("⚠️ Esta marca ya existe.")
+                else:
+                    st.error("Escribe un nombre válido.")
 def modulo_ventas():
     """Módulo de ventas con carga de Excel"""
     st.title("🛍️ Ventas")
