@@ -230,47 +230,82 @@ def modulo_productos():
     with tab2:
         st.subheader("Crear Nuevo Producto")
         
+        # --- ESCÁNER CON CÁMARA PARA TABLET (JAVASCRIPT NATIVO) ---
+        st.markdown("### 📷 Escanear Código con la Cámara")
+        
+        componente_camara = """
+        <div style="width: 100%; max-width: 400px; margin: 0 auto;">
+            <div id="lector-camara" style="width: 100%; background: #1e1e1e; border-radius: 8px;"></div>
+        </div>
+        <script src="https://unpkg.com/html5-qrcode"></script>
+        <script>
+            function onScanSuccess(decodedText, decodedResult) {
+                // Envía el código de barras detectado directamente a Streamlit
+                window.parent.postMessage({type: 'streamlit:setComponentValue', value: decodedText}, '*');
+                // Detiene la cámara temporalmente para confirmar la lectura
+                html5QrcodeScanner.clear();
+            }
+            
+            // Configuración optimizada para capturar códigos de barra de consumo masivo
+            let config = { fps: 15, qrbox: {width: 280, height: 160} };
+            let html5QrcodeScanner = new Html5QrcodeScanner("lector-camara", config, false);
+            html5QrcodeScanner.render(onScanSuccess);
+        </script>
+        """
+        
+        # Renderizar el lector de cámara web/tablet
+        import streamlit.components.v1 as components
+        codigo_detectado = components.html(componente_camara, height=330)
+        
+        st.markdown("---")
+        st.markdown("### 📝 Datos de la Ficha del Producto")
+        
+        # Cargar el código capturado por la cámara en el estado de la sesión si existe
+        if codigo_detectado:
+            st.session_state["input_codigo_maestro"] = str(codigo_detectado)
+            
         col1, col2 = st.columns(2)
         
         with col1:
-            codigo = st.text_input("Código de Barras")
-            nombre = st.text_input("Nombre del Producto")
+            codigo = st.text_input("Código de Barras", key="input_codigo_maestro")
+            nombre = st.text_input("Nombre del Producto (ej: Detergente Líquido 3L)")
+            
+        with col2:
             categoria_opt = execute_query("SELECT id, nombre FROM categorias", fetch=True)
             categoria = st.selectbox("Categoría", [c['nombre'] for c in categoria_opt] if categoria_opt else [])
-        
-        with col2:
+            
             marca_opt = execute_query("SELECT id, nombre FROM marcas", fetch=True)
             marca = st.selectbox("Marca", [m['nombre'] for m in marca_opt] if marca_opt else [])
-            precio_compra = st.number_input("Precio de Compra", min_value=0.0)
-            precio_venta = st.number_input("Precio de Venta", min_value=0.0)
         
-        stock = st.number_input("Stock Inicial", min_value=0)
-        stock_min = st.number_input("Stock Mínimo", min_value=0, value=5)
+        # Formulario Limpio: Únicamente precio de venta al público y el umbral de alerta de stock
+        col3, col4 = st.columns(2)
+        with col3:
+            precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
+        with col4:
+            stock_min = st.number_input("Stock Mínimo de Alerta", min_value=0, value=5)
         
-        if st.button("Crear Producto"):
-            # Obtener IDs
-            cat_id = execute_query(
-                "SELECT id FROM categorias WHERE nombre = %s",
-                (categoria,),
-                fetch=True
-            )[0]['id']
-            
-            marca_id = execute_query(
-                "SELECT id FROM marcas WHERE nombre = %s",
-                (marca,),
-                fetch=True
-            )[0]['id']
-            
-            # Insertar producto
-            execute_query("""
-                INSERT INTO productos 
-                (codigo_barras, nombre, categoria_id, marca_id, 
-                 precio_compra_actual, precio_venta_actual, stock_actual, stock_minimo)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (codigo, nombre, cat_id, marca_id, precio_compra, precio_venta, stock, stock_min))
-            
-            st.success("✅ Producto creado")
-    
+        if st.button("💾 Guardar Producto en Balmaceda Market", type="primary"):
+            if not codigo or not nombre:
+                st.error("❌ El Código de Barras y el Nombre del Producto son campos obligatorios.")
+            else:
+                try:
+                    # Obtener llaves foráneas de categorías y marcas
+                    cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
+                    marca_id = execute_query("SELECT id FROM marcas WHERE nombre = %s", (marca,), fetch=True)[0]['id']
+                    
+                    # Insertar producto inicializando stock y costo en 0 (Se gestionarán en el módulo de Compras)
+                    execute_query("""
+                        INSERT INTO productos 
+                        (codigo_barras, nombre, categoria_id, marca_id, 
+                         precio_compra_actual, precio_venta_actual, stock_actual, stock_minimo, activo)
+                        VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, true)
+                    """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min))
+                    
+                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente con stock inicial en cero.")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"❌ Error al guardar en PostgreSQL: {e}")
+                    
     with tab3:
         st.subheader("Buscar Producto")
         
