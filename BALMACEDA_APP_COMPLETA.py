@@ -380,7 +380,7 @@ def modulo_productos():
     with tab4:
         st.subheader("📁 Administración de Categorías y Marcas")
         
-        # VISOR EN TIEMPO REAL DE LO QUE YA EXISTE EN NEON
+        # VISOR EN TIEMPO REAL
         st.markdown("### 📊 Elementos actuales en la Base de Datos")
         col_v1, col_v2 = st.columns(2)
         with col_v1:
@@ -399,17 +399,21 @@ def modulo_productos():
             if st.button("💾 Guardar Categoría", key="pestaña_btn_cat", type="primary"):
                 if cat_input.strip():
                     nombre_limpio = cat_input.strip()
-                    existencia = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
+                    
+                    # Control estricto de duplicados antes de enviar a Neon
+                    existencia = execute_query("SELECT id FROM categorias WHERE TRIM(UPPER(nombre)) = TRIM(UPPER(%s))", (nombre_limpio,), fetch=True)
                     if not existencia:
-                        # Forzamos las columnas por defecto para que Neon no bote el query
-                        execute_query("INSERT INTO categorias (nombre, activo, descripcion) VALUES (%s, true, 'Creada desde la App')", (nombre_limpio,))
-                        # Traemos la lista limpia actualizada al instante
-                        cats_nuevas = execute_query("SELECT id, nombre FROM categorias WHERE activo = true ORDER BY nombre", fetch=True)
-                        st.session_state.lista_categorias = cats_nuevas if cats_nuevas else []
-                        st.success(f"✅ ¡Categoría '{nombre_limpio}' guardada con éxito!")
-                        st.rerun()
+                        try:
+                            execute_query("INSERT INTO categorias (nombre, activo, descripcion) VALUES (%s, true, 'Creada desde la App')", (nombre_limpio,))
+                            # Forzamos refresco completo trayendo la lista directo de Neon
+                            cats_nuevas = execute_query("SELECT id, nombre FROM categorias WHERE activo = true ORDER BY nombre", fetch=True)
+                            st.session_state.lista_categorias = cats_nuevas if cats_nuevas else []
+                            st.success(f"✅ ¡Categoría '{nombre_limpio}' guardada con éxito!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error en Neon al guardar: {e}")
                     else:
-                        st.warning("⚠️ Esta categoría ya existe en Neon.")
+                        st.warning(f"⚠️ La categoría '{nombre_limpio}' ya existe en tu Base de Datos.")
                 else:
                     st.error("Escribe un nombre válido.")
                     
@@ -419,15 +423,19 @@ def modulo_productos():
             if st.button("💾 Guardar Marca", key="pestaña_btn_marca", type="primary"):
                 if marca_input.strip():
                     nombre_limpio = marca_input.strip()
-                    existencia = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
+                    
+                    existencia = execute_query("SELECT id FROM marcas WHERE TRIM(UPPER(nombre)) = TRIM(UPPER(%s))", (nombre_limpio,), fetch=True)
                     if not existencia:
-                        execute_query("INSERT INTO marcas (nombre, activo) VALUES (%s, true)", (nombre_limpio,))
-                        marcas_nuevas = execute_query("SELECT id, nombre FROM marcas WHERE activo = true ORDER BY nombre", fetch=True)
-                        st.session_state.lista_marcas = marcas_nuevas if marcas_nuevas else []
-                        st.success(f"✅ ¡Marca '{nombre_limpio}' guardada con éxito!")
-                        st.rerun()
+                        try:
+                            execute_query("INSERT INTO marcas (nombre, activo) VALUES (%s, true)", (nombre_limpio,))
+                            marcas_nuevas = execute_query("SELECT id, nombre FROM marcas WHERE activo = true ORDER BY nombre", fetch=True)
+                            st.session_state.lista_marcas = marcas_nuevas if marcas_nuevas else []
+                            st.success(f"✅ ¡Marca '{nombre_limpio}' guardada con éxito!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error en Neon al guardar: {e}")
                     else:
-                        st.warning("⚠️ Esta marca ya existe en Neon.")
+                        st.warning(f"⚠️ La marca '{nombre_limpio}' ya existe en tu Base de Datos.")
                 else:
                     st.error("Escribe un nombre válido.")
 def modulo_compras():
