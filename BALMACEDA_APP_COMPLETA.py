@@ -213,7 +213,7 @@ def dashboard():
         st.dataframe(df, use_container_width=True)
 
 def modulo_productos():
-    """Gestión de productos"""
+    """Gestión de productos con validaciones estrictas y campos de auditoría"""
     st.title("📦 Productos")
     
     tab1, tab2, tab3 = st.tabs(["Listar", "Crear", "Buscar"])
@@ -222,16 +222,18 @@ def modulo_productos():
         st.subheader("Inventario de Productos")
         
         productos = execute_query("""
-            SELECT p.id, p.codigo_barras, p.nombre, c.nombre as categoria,
-                   p.stock_actual, p.stock_minimo, p.precio_venta_actual, p.activo
+            SELECT p.id, p.codigo_barras, p.nombre, c.nombre as categoria, m.nombre as marca,
+                   p.stock_actual, p.stock_minimo, p.precio_venta_actual, p.activo, p.unidad_medida
             FROM productos p
-            JOIN categorias c ON p.categoria_id = c.id
-            WHERE p.activo = true
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+            LEFT JOIN marcas m ON p.marca_id = m.id
             ORDER BY p.nombre
         """, fetch=True)
         
         if productos:
             df = pd.DataFrame(productos)
+            # Renombrar columnas para visualización amigable
+            df.columns = ['ID', 'Código de Barras', 'Nombre', 'Categoría', 'Marca', 'Stock Actual', 'Stock Mínimo', 'Precio Venta', 'Activo', 'Unidad Medida']
             st.dataframe(df, use_container_width=True)
         else:
             st.info("No hay productos registrados")
@@ -239,52 +241,19 @@ def modulo_productos():
     with tab2:
         st.subheader("Crear Nuevo Producto")
         
-        # --- ESCÁNER CON CÁMARA PARA TABLET/CELULAR (JAVASCRIPT NATIVO) ---
-        st.markdown("### 📷 Escanear Código con la Cámara")
-        
-        componente_camara = """
-        <div style="width: 100%; max-width: 400px; margin: 0 auto;">
-            <div id="lector-camara" style="width: 100%; background: #1e1e1e; border-radius: 8px;"></div>
-        </div>
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <script>
-            function onScanSuccess(decodedText, decodedResult) {
-                const inputElement = window.parent.document.querySelector('input[aria-label="Código de Barras"]');
-                if (inputElement) {
-                    inputElement.value = decodedText;
-                    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-                    inputElement.dispatchEvent(new Event('change', { bubbles: true }));
-                } else {
-                    window.parent.postMessage({type: 'streamlit:setComponentValue', value: decodedText}, '*');
-                }
-                html5QrcodeScanner.clear();
-            }
-            
-            let config = { fps: 15, qrbox: {width: 280, height: 160} };
-            let html5QrcodeScanner = new Html5QrcodeScanner("lector-camara", config, false);
-            html5QrcodeScanner.render(onScanSuccess);
-        </script>
-        """
-        
-        import streamlit.components.v1 as components
-        components.html(componente_camara, height=330)
-        
-        st.markdown("---")
-        
         # --- SUB-MÓDULO: CREACIÓN RÁPIDA DE CATEGORÍAS Y MARCAS ---
-        st.markdown("### ➕ Añadir Nueva Categoría o Marca (Si no existen en la lista)")
+        st.markdown("### ➕ Añadir Nueva Categoría o Marca")
         col_pop1, col_pop2 = st.columns(2)
         
         with col_pop1:
             with st.expander("🆕 Registrar Nueva Categoría"):
-                nueva_cat = st.text_input("Nombre de la Categoría (ej: Aseo Hogar, Pañales)", key="txt_nueva_cat")
+                nueva_cat = st.text_input("Nombre de la Categoría", key="txt_nueva_cat")
                 if st.button("Guardar Categoría", key="btn_guardar_cat"):
                     if nueva_cat.strip():
-                        # Verificar si ya existe para no duplicar
                         existe_cat = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nueva_cat.strip(),), fetch=True)
                         if not existe_cat:
                             execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nueva_cat.strip(),))
-                            st.success(f"¡Categoría '{nueva_cat}' añadida!")
+                            st.success(f"¡Categoría '{nueva_cat.strip()}' añadida!")
                             st.rerun()
                         else:
                             st.warning("Esa categoría ya existe en la lista.")
@@ -293,14 +262,13 @@ def modulo_productos():
 
         with col_pop2:
             with st.expander("🆕 Registrar Nueva Marca"):
-                nueva_marca = st.text_input("Nombre de la Marca (ej: Clorox, Colgate)", key="txt_nueva_marca")
+                nueva_marca = st.text_input("Nombre de la Marca", key="txt_nueva_marca")
                 if st.button("Guardar Marca", key="btn_guardar_marca"):
                     if nueva_marca.strip():
-                        # Verificar si ya existe para no duplicar
                         existe_marca = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nueva_marca.strip(),), fetch=True)
                         if not existe_marca:
                             execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nueva_marca.strip(),))
-                            st.success(f"¡Marca '{nueva_marca}' añadida!")
+                            st.success(f"¡Marca '{nueva_marca.strip()}' añadida!")
                             st.rerun()
                         else:
                             st.warning("Esa marca ya existe en la lista.")
@@ -308,67 +276,156 @@ def modulo_productos():
                         st.error("Escribe un nombre válido.")
 
         st.markdown("---")
-        st.markdown("### 📝 Datos de la Ficha del Producto")
         
-        # --- FORMULARIO DE LA FICHA ---
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            codigo = st.text_input("Código de Barras", placeholder="Escanea o escribe manualmente...")
-            nombre = st.text_input("Nombre del Producto (ej: Detergente Líquido 3L)")
+        # --- SECCIÓN DE ESCANEO OPCIONAL ---
+        col_cod1, col_cod2 = st.columns([3, 1])
+        with col_cod1:
+            # Entrada de código de barras eliminando espacios vacíos
+            codigo_raw = st.text_input("Código de Barras", placeholder="Escanea o escribe manualmente...", key="input_codigo_maestro")
+            codigo = codigo_raw.strip() if codigo_raw else ""
             
-        with col2:
-            # Traer datos frescos actualizados de PostgreSQL
+        with col_cod2:
+            st.write("¿Escanear?")
+            activar_camara = st.checkbox("📷 Abrir Cámara", value=False)
+            
+        if activar_camara:
+            componente_camara = """
+            <div style="width: 100%; max-width: 400px; margin: 0 auto;">
+                <div id="lector-camara" style="width: 100%; background: #1e1e1e; border-radius: 8px;"></div>
+            </div>
+            <script src="https://unpkg.com/html5-qrcode"></script>
+            <script>
+                function onScanSuccess(decodedText, decodedResult) {
+                    const inputElement = window.parent.document.querySelector('input[aria-label="Código de Barras"]');
+                    if (inputElement) {
+                        inputElement.value = decodedText;
+                        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                        inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    html5QrcodeScanner.clear();
+                }
+                let config = { fps: 15, qrbox: {width: 280, height: 160} };
+                let html5QrcodeScanner = new Html5QrcodeScanner("lector-camara", config, false);
+                html5QrcodeScanner.render(onScanSuccess);
+            </script>
+            """
+            import streamlit.components.v1 as components
+            components.html(componente_camara, height=330)
+
+        # 1. VALIDACIÓN EN TIEMPO REAL: Código de barras único
+        if codigo:
+            prod_existente = execute_query("SELECT nombre, activo FROM productos WHERE codigo_barras = %s", (codigo,), fetch=True)
+            if prod_existente:
+                estado_prod = "Activo" if prod_existente[0]['activo'] else "Inactivo"
+                st.warning(f"⚠️ Ya existe un producto registrado con este código: **{prod_existente[0]['nombre']}** (Estado: {estado_prod})")
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("🔍 Ver Producto", use_container_width=True):
+                        st.info("Función para redireccionar en desarrollo.")
+                with col_btn2:
+                    if st.button("✏️ Editar Producto", use_container_width=True):
+                        st.info("Función para editar en desarrollo.")
+                st.markdown("---")
+
+        # --- DISTRIBUCIÓN DEL FORMULARIO PRINCIPAL ---
+        col_form_izq, col_form_der = st.columns(2)
+        
+        with col_form_izq:
+            st.markdown("#### 🔴 Datos Obligatorios")
+            
+            # 2. VALIDACIÓN: Nombre sin espacios extras al inicio/final
+            nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
+            nombre = nombre_raw.strip() if nombre_raw else ""
+            
+            # 3. VALIDACIÓN: Categorías
             categoria_opt = execute_query("SELECT id, nombre FROM categorias ORDER BY nombre", fetch=True)
-            categoria = st.selectbox("Categoría", [c['nombre'] for c in categoria_opt] if categoria_opt else ["-- Primero añade una categoría arriba --"])
+            listado_cats = [c['nombre'] for c in categoria_opt] if categoria_opt else []
+            categoria = st.selectbox("Categoría", listado_cats if listado_cats else ["-- Primero añade una categoría arriba --"])
             
+            # 4. VALIDACIÓN: Marcas
             marca_opt = execute_query("SELECT id, nombre FROM marcas ORDER BY nombre", fetch=True)
-            marca = st.selectbox("Marca", [m['nombre'] for m in marca_opt] if marca_opt else ["-- Primero añade una marca arriba --"])
-        
-        col3, col4 = st.columns(2)
-        with col3:
+            listado_marcas = [m['nombre'] for m in marca_opt] if marca_opt else []
+            marca = st.selectbox("Marca", listado_marcas if listado_marcas else ["-- Primero añade una marca arriba --"])
+            
+            # 5. VALIDACIÓN: Precio de venta mayor a cero
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
-        with col4:
             stock_min = st.number_input("Stock Mínimo de Alerta", min_value=0, value=5)
+
+        with col_form_der:
+            st.markdown("#### 🟢 Datos Recomendados / Auditoría")
+            
+            # Estado Activo/Inactivo
+            estado_input = st.selectbox("Estado del Producto", ["Activo", "Inactivo"])
+            activo_bool = True if estado_input == "Activo" else False
+            
+            # Unidad de Medida
+            unidad_medida = st.selectbox("Unidad de Medida", ["Unidad", "Pack", "Caja", "Litro", "Kg"])
+            
+            # Descripción / Observaciones (Opcional)
+            descripcion = st.text_area("Descripción / Observaciones (Opcional)", placeholder="Ej: Producto estacional, no mantener más de 20 unidades...")
+            
+            # Datos automáticos informativos (Auditoría)
+            st.text_input("Fecha de Creación (Automática)", value=datetime.now().strftime("%d-%m-%Y %H:%M"), disabled=True)
+            st.text_input("Usuario Creador (Automático)", value=st.session_state.get('user', 'Carla'), disabled=True)
+
+        st.markdown("---")
         
         if st.button("💾 Guardar Producto en Balmaceda Market", type="primary"):
-            if not codigo or not nombre:
-                st.error("❌ El Código de Barras y el Nombre del Producto son campos obligatorios.")
-            elif not categoria_opt or not marca_opt:
-                st.error("❌ Debes seleccionar una Categoría y una Marca válidas antes de guardar.")
+            # Validaciones críticas antes de insertar
+            if not codigo:
+                st.error("❌ El Código de Barras es obligatorio.")
+            elif not nombre:
+                st.error("❌ El Nombre del Producto es obligatorio y no puede quedar vacío.")
+            elif not listado_cats or "--" in categoria:
+                st.error("❌ Debe seleccionar una Categoría válida. Si no hay, créala en la sección de arriba.")
+            elif not listado_marcas or "--" in marca:
+                st.error("❌ Debe seleccionar una Marca válida. Si no hay, créala en la sección de arriba.")
+            elif precio_venta <= 0:
+                st.error("❌ El Precio de Venta debe ser mayor a cero ($).")
             else:
                 try:
-                    cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
-                    marca_id = execute_query("SELECT id FROM marcas WHERE nombre = %s", (marca,), fetch=True)[0]['id']
-                    
-                    execute_query("""
-                        INSERT INTO productos 
-                        (codigo_barras, nombre, categoria_id, marca_id, 
-                         precio_compra_actual, precio_venta_actual, stock_actual, stock_minimo, activo)
-                        VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, true)
-                    """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min))
-                    
-                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente con stock inicial en cero.")
-                    st.balloons()
+                    # Re-verificar duplicado por seguridad antes de la transacción final
+                    duplicado = execute_query("SELECT id FROM productos WHERE codigo_barras = %s", (codigo,), fetch=True)
+                    if duplicado:
+                        st.error("❌ Error de consistencia: Ese código de barras ya fue guardado hace instantes.")
+                    else:
+                        # Buscar los IDs correspondientes de Categoría y Marca
+                        cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
+                        marca_id = execute_query("SELECT id FROM marcas WHERE nombre = %s", (marca,), fetch=True)[0]['id']
+                        
+                        usuario_actual = st.session_state.get('user', 'Carla')
+                        
+                        # Guardar el registro con todos los nuevos parámetros e inyectando los datos de auditoría
+                        execute_query("""
+                            INSERT INTO productos 
+                            (codigo_barras, nombre, categoria_id, marca_id, 
+                             precio_compra_actual, precio_venta_actual, stock_actual, stock_minimo, 
+                             activo, unidad_medida, descripcion, usuario_creador, fecha_creacion)
+                            VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min, activo_bool, unidad_medida, descripcion, usuario_actual))
+                        
+                        st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente con auditoría registrada.")
+                        st.balloons()
+                        st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al guardar en PostgreSQL: {e}")
                     
     with tab3:
         st.subheader("Buscar Producto")
-        
         busqueda = st.text_input("Buscar por nombre o código")
         
         if busqueda:
             resultados = execute_query("""
                 SELECT p.id, p.codigo_barras, p.nombre, c.nombre as categoria,
-                       p.stock_actual, p.precio_venta_actual
+                       p.stock_actual, p.precio_venta_actual, p.activo
                 FROM productos p
-                JOIN categorias c ON p.categoria_id = c.id
-                WHERE (p.nombre ILIKE %s OR p.codigo_barras LIKE %s) AND p.activo = true
+                LEFT JOIN categorias c ON p.categoria_id = c.id
+                WHERE (p.nombre ILIKE %s OR p.codigo_barras LIKE %s)
             """, (f"%{busqueda}%", f"%{busqueda}%"), fetch=True)
             
             if resultados:
                 df = pd.DataFrame(resultados)
+                df.columns = ['ID', 'Código de Barras', 'Nombre', 'Categoría', 'Stock Actual', 'Precio Venta', 'Activo']
                 st.dataframe(df, use_container_width=True)
             else:
                 st.warning("No se encontraron productos")
