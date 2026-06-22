@@ -213,7 +213,7 @@ def dashboard():
         st.dataframe(df, use_container_width=True)
 
 def modulo_productos():
-    """Gestión de productos con validaciones estrictas y campos de auditoría"""
+    """Gestión de productos con validaciones estrictas y actualización instantánea de listas"""
     st.title("📦 Productos")
     
     tab1, tab2, tab3 = st.tabs(["Listar", "Crear", "Buscar"])
@@ -232,7 +232,6 @@ def modulo_productos():
         
         if productos:
             df = pd.DataFrame(productos)
-            # Renombrar columnas para visualización amigable
             df.columns = ['ID', 'Código de Barras', 'Nombre', 'Categoría', 'Marca', 'Stock Actual', 'Stock Mínimo', 'Precio Venta', 'Activo', 'Unidad Medida']
             st.dataframe(df, use_container_width=True)
         else:
@@ -250,11 +249,11 @@ def modulo_productos():
                 nueva_cat = st.text_input("Nombre de la Categoría", key="txt_nueva_cat")
                 if st.button("Guardar Categoría", key="btn_guardar_cat"):
                     if nueva_cat.strip():
+                        # Conexión fresca y directa
                         existe_cat = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nueva_cat.strip(),), fetch=True)
                         if not existe_cat:
                             execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nueva_cat.strip(),))
-                            st.success(f"¡Categoría '{nueva_cat.strip()}' añadida!")
-                            st.rerun()
+                            st.success(f"¡Categoría '{nueva_cat.strip()}' añadida exitosamente!")
                         else:
                             st.warning("Esa categoría ya existe en la lista.")
                     else:
@@ -265,11 +264,11 @@ def modulo_productos():
                 nueva_marca = st.text_input("Nombre de la Marca", key="txt_nueva_marca")
                 if st.button("Guardar Marca", key="btn_guardar_marca"):
                     if nueva_marca.strip():
+                        # Conexión fresca y directa
                         existe_marca = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nueva_marca.strip(),), fetch=True)
                         if not existe_marca:
                             execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nueva_marca.strip(),))
-                            st.success(f"¡Marca '{nueva_marca.strip()}' añadida!")
-                            st.rerun()
+                            st.success(f"¡Marca '{nueva_marca.strip()}' añadida exitosamente!")
                         else:
                             st.warning("Esa marca ya existe en la lista.")
                     else:
@@ -280,7 +279,6 @@ def modulo_productos():
         # --- SECCIÓN DE ESCANEO OPCIONAL ---
         col_cod1, col_cod2 = st.columns([3, 1])
         with col_cod1:
-            # Entrada de código de barras eliminando espacios vacíos
             codigo_raw = st.text_input("Código de Barras", placeholder="Escanea o escribe manualmente...", key="input_codigo_maestro")
             codigo = codigo_raw.strip() if codigo_raw else ""
             
@@ -312,7 +310,7 @@ def modulo_productos():
             import streamlit.components.v1 as components
             components.html(componente_camara, height=330)
 
-        # 1. VALIDACIÓN EN TIEMPO REAL: Código de barras único
+        # 1. VALIDACIÓN: Código de barras único
         if codigo:
             prod_existente = execute_query("SELECT nombre, activo FROM productos WHERE codigo_barras = %s", (codigo,), fetch=True)
             if prod_existente:
@@ -328,74 +326,74 @@ def modulo_productos():
                 st.markdown("---")
 
         # --- DISTRIBUCIÓN DEL FORMULARIO PRINCIPAL ---
+        st.markdown("### 📝 Datos de la Ficha del Producto")
         col_form_izq, col_form_der = st.columns(2)
         
         with col_form_izq:
             st.markdown("#### 🔴 Datos Obligatorios")
             
-            # 2. VALIDACIÓN: Nombre sin espacios extras al inicio/final
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # 3. VALIDACIÓN: Categorías
+            # CONSULTA FRESCA DE CATEGORÍAS: Se ejecuta de forma independiente al renderizar la lista
             categoria_opt = execute_query("SELECT id, nombre FROM categorias ORDER BY nombre", fetch=True)
             listado_cats = [c['nombre'] for c in categoria_opt] if categoria_opt else []
-            categoria = st.selectbox("Categoría", listado_cats if listado_cats else ["-- Primero añade una categoría arriba --"])
             
-            # 4. VALIDACIÓN: Marcas
+            if listado_cats:
+                categoria = st.selectbox("Categoría", listado_cats)
+            else:
+                categoria = st.selectbox("Categoría", ["-- Primero añade una categoría arriba --"], disabled=True)
+            
+            # CONSULTA FRESCA DE MARCAS: Se ejecuta de forma independiente al renderizar la lista
             marca_opt = execute_query("SELECT id, nombre FROM marcas ORDER BY nombre", fetch=True)
             listado_marcas = [m['nombre'] for m in marca_opt] if marca_opt else []
-            marca = st.selectbox("Marca", listado_marcas if listado_marcas else ["-- Primero añade una marca arriba --"])
             
-            # 5. VALIDACIÓN: Precio de venta mayor a cero
+            if listado_marcas:
+                marca = st.selectbox("Marca", listado_marcas)
+            else:
+                marca = st.selectbox("Marca", ["-- Primero añade una marca arriba --"], disabled=True)
+            
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
             stock_min = st.number_input("Stock Mínimo de Alerta", min_value=0, value=5)
 
         with col_form_der:
             st.markdown("#### 🟢 Datos Recomendados / Auditoría")
             
-            # Estado Activo/Inactivo
             estado_input = st.selectbox("Estado del Producto", ["Activo", "Inactivo"])
             activo_bool = True if estado_input == "Activo" else False
             
-            # Unidad de Medida
             unidad_medida = st.selectbox("Unidad de Medida", ["Unidad", "Pack", "Caja", "Litro", "Kg"])
             
-            # Descripción / Observaciones (Opcional)
             descripcion = st.text_area("Descripción / Observaciones (Opcional)", placeholder="Ej: Producto estacional, no mantener más de 20 unidades...")
             
-            # Datos automáticos informativos (Auditoría)
             st.text_input("Fecha de Creación (Automática)", value=datetime.now().strftime("%d-%m-%Y %H:%M"), disabled=True)
             st.text_input("Usuario Creador (Automático)", value=st.session_state.get('user', 'Carla'), disabled=True)
 
         st.markdown("---")
         
         if st.button("💾 Guardar Producto en Balmaceda Market", type="primary"):
-            # Validaciones críticas antes de insertar
+            # Validaciones críticas finales antes de guardar
             if not codigo:
                 st.error("❌ El Código de Barras es obligatorio.")
             elif not nombre:
                 st.error("❌ El Nombre del Producto es obligatorio y no puede quedar vacío.")
             elif not listado_cats or "--" in categoria:
-                st.error("❌ Debe seleccionar una Categoría válida. Si no hay, créala en la sección de arriba.")
+                st.error("❌ Debe seleccionar una Categoría válida. Si no la encuentras, créala primero en la sección superior.")
             elif not listado_marcas or "--" in marca:
-                st.error("❌ Debe seleccionar una Marca válida. Si no hay, créala en la sección de arriba.")
+                st.error("❌ Debe seleccionar una Marca válida. Si no la encuentras, créala primero en la sección superior.")
             elif precio_venta <= 0:
                 st.error("❌ El Precio de Venta debe ser mayor a cero ($).")
             else:
                 try:
-                    # Re-verificar duplicado por seguridad antes de la transacción final
+                    # Confirmación de no duplicación final
                     duplicado = execute_query("SELECT id FROM productos WHERE codigo_barras = %s", (codigo,), fetch=True)
                     if duplicado:
-                        st.error("❌ Error de consistencia: Ese código de barras ya fue guardado hace instantes.")
+                        st.error("❌ Error: Ese código de barras ya fue guardado hace instantes.")
                     else:
-                        # Buscar los IDs correspondientes de Categoría y Marca
                         cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
                         marca_id = execute_query("SELECT id FROM marcas WHERE nombre = %s", (marca,), fetch=True)[0]['id']
-                        
                         usuario_actual = st.session_state.get('user', 'Carla')
                         
-                        # Guardar el registro con todos los nuevos parámetros e inyectando los datos de auditoría
                         execute_query("""
                             INSERT INTO productos 
                             (codigo_barras, nombre, categoria_id, marca_id, 
@@ -404,9 +402,8 @@ def modulo_productos():
                             VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                         """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min, activo_bool, unidad_medida, descripcion, usuario_actual))
                         
-                        st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente con auditoría registrada.")
+                        st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente en Neon con stock inicial en cero.")
                         st.balloons()
-                        st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al guardar en PostgreSQL: {e}")
                     
