@@ -310,14 +310,14 @@ def modulo_productos():
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # Selectores mapeados usando las listas en memoria interna
-            cats_dict = {c['nombre']: c['id'] for c in st.session_state.lista_categorias}
+            # Mapeo seguro de diccionarios asegurando que cumplan el formato [{'id': ..., 'nombre': ...}]
+            cats_dict = {c['nombre']: c['id'] for c in st.session_state.lista_categorias if isinstance(c, dict) and 'nombre' in c}
             categoria_sel = st.selectbox("Categoría", list(cats_dict.keys()) if cats_dict else ["⚠️ No hay categorías. Ve a la pestaña 4."])
             
-            marcas_dict = {m['nombre']: m['id'] for m in st.session_state.lista_marcas}
+            marcas_dict = {m['nombre']: m['id'] for m in st.session_state.lista_marcas if isinstance(m, dict) and 'nombre' in m}
             marca_sel = st.selectbox("Marca", list(marcas_dict.keys()) if marcas_dict else ["⚠️ No hay marcas. Ve a la pestaña 4."])
             
-            unidades_dict = {f"{u['nombre']} ({u['abreviatura']})": u['id'] for u in st.session_state.lista_unidades}
+            unidades_dict = {f"{u['nombre']} ({u['abreviatura']})": u['id'] for u in st.session_state.lista_unidades if isinstance(u, dict) and 'nombre' in u}
             unidad_sel = st.selectbox("Unidad de Medida", list(unidades_dict.keys()) if unidades_dict else ["⚠️ No hay unidades en la BD."])
             
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
@@ -328,7 +328,6 @@ def modulo_productos():
             estado_input = st.selectbox("Estado del Producto", ["Activo", "Inactivo"])
             activo_bool = True if estado_input == "Activo" else False
             
-            # Adaptamos campos para encajar perfectamente con la estructura original sin romper nada
             st.text_area("Descripción (Opcional)", key="prod_desc_opc", placeholder="Detalles del producto...")
             st.text_input("Fecha de Creación (Automática)", value=datetime.now().strftime("%d-%m-%Y %H:%M"), disabled=True)
             st.text_input("Usuario Operador", value=st.session_state.get('user', 'admin'), disabled=True)
@@ -351,10 +350,9 @@ def modulo_productos():
                         unidad_id = unidades_dict[unidad_sel]
                         desc_text = st.session_state.get('prod_desc_opc', '')
                         
-                        # Transacción limpia usando exactamente tus columnas reales
                         execute_query("""
                             INSERT INTO productos 
-                            (codigo_barras, nombre, descripcion, marca_id, categoria_id, unidad_medida_id, 
+                            (codigo_barras, nombre, descripcion, marca_id, categoria_id, unit_medida_id, 
                              precio_compra_actual, precio_venta_actual, stock_actual, stock_minimo, activo, fecha_creacion, fecha_modificacion)
                             VALUES (%s, %s, %s, %s, %s, %s, 0.0, %s, 0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """, (codigo, nombre, desc_text, marca_id, cat_id, unidad_id, precio_venta, stock_min, activo_bool))
@@ -394,7 +392,7 @@ def modulo_productos():
                     existencia = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
                     if not existencia:
                         execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nombre_limpio,))
-                        # Re-inicializar memoria de inmediato para impactar el selector
+                        # RE-INITIALIZE CON FORMATO DE DICCIONARIO CORRECTO
                         cats_nuevas = execute_query("SELECT id, nombre FROM categorias WHERE activo = true ORDER BY nombre", fetch=True)
                         st.session_state.lista_categorias = cats_nuevas if cats_nuevas else []
                         st.success(f"✅ Categoría '{nombre_limpio}' guardada con éxito.")
@@ -413,7 +411,7 @@ def modulo_productos():
                     existencia = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
                     if not existencia:
                         execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nombre_limpio,))
-                        # Re-inicializar memoria de inmediato para impactar el selector
+                        # RE-INITIALIZE CON FORMATO DE DICCIONARIO CORRECTO
                         marcas_nuevas = execute_query("SELECT id, nombre FROM marcas WHERE activo = true ORDER BY nombre", fetch=True)
                         st.session_state.lista_marcas = marcas_nuevas if marcas_nuevas else []
                         st.success(f"✅ Marca '{nombre_limpio}' guardada con éxito.")
