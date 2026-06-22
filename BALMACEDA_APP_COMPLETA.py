@@ -230,13 +230,9 @@ def modulo_productos():
     with tab2:
         st.subheader("Crear Nuevo Producto")
         
-        # Inicializar una variable limpia en la memoria de la sesión para el código
-        if "codigo_escaneado_camara" not in st.session_state:
-            st.session_state["codigo_escaneado_camara"] = ""
-
+        # --- ESCÁNER CON CÁMARA PARA TABLET/CELULAR (JAVASCRIPT NATIVO) ---
         st.markdown("### 📷 Escanear Código con la Cámara")
         
-        # HTML/JavaScript corregido para usar la API de mensajes de Streamlit correctamente
         componente_camara = """
         <div style="width: 100%; max-width: 400px; margin: 0 auto;">
             <div id="lector-camara" style="width: 100%; background: #1e1e1e; border-radius: 8px;"></div>
@@ -244,14 +240,12 @@ def modulo_productos():
         <script src="https://unpkg.com/html5-qrcode"></script>
         <script>
             function onScanSuccess(decodedText, decodedResult) {
-                // Truco técnico: Enviar el código simulando un evento que Streamlit sí entiende en el árbol de HTML
                 const inputElement = window.parent.document.querySelector('input[aria-label="Código de Barras"]');
                 if (inputElement) {
                     inputElement.value = decodedText;
                     inputElement.dispatchEvent(new Event('input', { bubbles: true }));
                     inputElement.dispatchEvent(new Event('change', { bubbles: true }));
                 } else {
-                    // Alternativa si no encuentra el foco directo
                     window.parent.postMessage({type: 'streamlit:setComponentValue', value: decodedText}, '*');
                 }
                 html5QrcodeScanner.clear();
@@ -264,25 +258,63 @@ def modulo_productos():
         """
         
         import streamlit.components.v1 as components
-        # Renderizamos la cámara fijando el valor capturado de forma independiente
         components.html(componente_camara, height=330)
         
         st.markdown("---")
+        
+        # --- SUB-MÓDULO: CREACIÓN RÁPIDA DE CATEGORÍAS Y MARCAS ---
+        st.markdown("### ➕ Añadir Nueva Categoría o Marca (Si no existen en la lista)")
+        col_pop1, col_pop2 = st.columns(2)
+        
+        with col_pop1:
+            with st.expander("🆕 Registrar Nueva Categoría"):
+                nueva_cat = st.text_input("Nombre de la Categoría (ej: Aseo Hogar, Pañales)", key="txt_nueva_cat")
+                if st.button("Guardar Categoría", key="btn_guardar_cat"):
+                    if nueva_cat.strip():
+                        # Verificar si ya existe para no duplicar
+                        existe_cat = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nueva_cat.strip(),), fetch=True)
+                        if not existe_cat:
+                            execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nueva_cat.strip(),))
+                            st.success(f"¡Categoría '{nueva_cat}' añadida!")
+                            st.rerun()
+                        else:
+                            st.warning("Esa categoría ya existe en la lista.")
+                    else:
+                        st.error("Escribe un nombre válido.")
+
+        with col_pop2:
+            with st.expander("🆕 Registrar Nueva Marca"):
+                nueva_marca = st.text_input("Nombre de la Marca (ej: Clorox, Colgate)", key="txt_nueva_marca")
+                if st.button("Guardar Marca", key="btn_guardar_marca"):
+                    if nueva_marca.strip():
+                        # Verificar si ya existe para no duplicar
+                        existe_marca = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nueva_marca.strip(),), fetch=True)
+                        if not existe_marca:
+                            execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nueva_marca.strip(),))
+                            st.success(f"¡Marca '{nueva_marca}' añadida!")
+                            st.rerun()
+                        else:
+                            st.warning("Esa marca ya existe en la lista.")
+                    else:
+                        st.error("Escribe un nombre válido.")
+
+        st.markdown("---")
         st.markdown("### 📝 Datos de la Ficha del Producto")
         
+        # --- FORMULARIO DE LA FICHA ---
         col1, col2 = st.columns(2)
         
         with col1:
-            # Ahora el campo está limpio. Si la cámara escribe, aparecerá aquí; si no, digitas tú sin DeltaGenerators.
             codigo = st.text_input("Código de Barras", placeholder="Escanea o escribe manualmente...")
             nombre = st.text_input("Nombre del Producto (ej: Detergente Líquido 3L)")
             
         with col2:
-            categoria_opt = execute_query("SELECT id, nombre FROM categorias", fetch=True)
-            categoria = st.selectbox("Categoría", [c['nombre'] for c in categoria_opt] if categoria_opt else [])
+            # Traer datos frescos actualizados de PostgreSQL
+            categoria_opt = execute_query("SELECT id, nombre FROM categorias ORDER BY nombre", fetch=True)
+            categoria = st.selectbox("Categoría", [c['nombre'] for c in categoria_opt] if categoria_opt else ["-- Primero añade una categoría arriba --"])
             
-            marca_opt = execute_query("SELECT id, nombre FROM marcas", fetch=True)
-            marca = st.selectbox("Marca", [m['nombre'] for m in marca_opt] if marca_opt else [])
+            marca_opt = execute_query("SELECT id, nombre FROM marcas ORDER BY nombre", fetch=True)
+            marca = st.selectbox("Marca", [m['nombre'] for m in marca_opt] if marca_opt else ["-- Primero añade una marca arriba --"])
         
         col3, col4 = st.columns(2)
         with col3:
@@ -293,6 +325,8 @@ def modulo_productos():
         if st.button("💾 Guardar Producto en Balmaceda Market", type="primary"):
             if not codigo or not nombre:
                 st.error("❌ El Código de Barras y el Nombre del Producto son campos obligatorios.")
+            elif not categoria_opt or not marca_opt:
+                st.error("❌ Debes seleccionar una Categoría y una Marca válidas antes de guardar.")
             else:
                 try:
                     cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
@@ -305,7 +339,7 @@ def modulo_productos():
                         VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, true)
                     """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min))
                     
-                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente.")
+                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente con stock inicial en cero.")
                     st.balloons()
                 except Exception as e:
                     st.error(f"❌ Error al guardar en PostgreSQL: {e}")
