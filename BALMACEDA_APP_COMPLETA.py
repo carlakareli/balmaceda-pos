@@ -213,9 +213,24 @@ def dashboard():
         st.dataframe(df, use_container_width=True)
 
 def modulo_productos():
-    """Gestión de productos con diagnóstico de errores real para Categorías y Marcas"""
+    """Gestión de productos optimizada con memoria intermedia para evitar cierres de conexión"""
     st.title("📦 Productos")
     
+    # 1. INICIALIZAR LA MEMORIA INTERNA (Si no existe, se cargan de Neon por primera vez)
+    if 'lista_categorias' not in st.session_state:
+        try:
+            cats = execute_query("SELECT nombre FROM categorias ORDER BY nombre", fetch=True)
+            st.session_state.lista_categorias = [c['nombre'] for c in cats] if cats else []
+        except Exception:
+            st.session_state.lista_categorias = []
+
+    if 'lista_marcas' not in st.session_state:
+        try:
+            marcas = execute_query("SELECT nombre FROM marcas ORDER BY nombre", fetch=True)
+            st.session_state.lista_marcas = [m['nombre'] for m in marcas] if marcas else []
+        except Exception:
+            st.session_state.lista_marcas = []
+
     tab1, tab2, tab3, tab4 = st.tabs(["Listar", "Crear Producto", "Buscar", "📁 Categorías y Marcas"])
     
     with tab1:
@@ -287,23 +302,16 @@ def modulo_productos():
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # --- DIAGNÓSTICO EN VIVO DE CATEGORÍAS ---
-            st.markdown("**Estado de la Tabla Categorías:**")
-            categoria_opt = execute_query("SELECT * FROM categorias LIMIT 1", fetch=True) # Forzamos ver si la tabla responde
+            # --- LEER DE LA MEMORIA INTERNA (RÁPIDO, SEGURO Y SIN CAÍDAS) ---
+            cats_disponibles = st.session_state.lista_categorias
+            if not cats_disponibles:
+                cats_disponibles = ["⚠️ No hay categorías creadas aún. Ve a la pestaña de Categorías."]
+            categoria = st.selectbox("Categoría", cats_disponibles)
             
-            # Cargamos la lista normal
-            cat_data = execute_query("SELECT nombre FROM categorias ORDER BY nombre", fetch=True)
-            listado_cats = [c['nombre'] for c in cat_data] if cat_data else []
-            if not listado_cats:
-                listado_cats = ["⚠️ La tabla 'categorias' está vacía o no responde."]
-            categoria = st.selectbox("Categoría", listado_cats)
-            
-            # --- DIAGNÓSTICO EN VIVO DE MARCAS ---
-            marca_data = execute_query("SELECT nombre FROM marcas ORDER BY nombre", fetch=True)
-            listado_marcas = [m['nombre'] for m in marca_data] if marca_data else []
-            if not listado_marcas:
-                listado_marcas = ["⚠️ La tabla 'marcas' está vacía o no responde."]
-            marca = st.selectbox("Marca", listado_marcas)
+            marcas_disponibles = st.session_state.lista_marcas
+            if not marcas_disponibles:
+                marcas_disponibles = ["⚠️ No hay marcas creadas aún. Ve a la pestaña de Categorías."]
+            marca = st.selectbox("Marca", marcas_disponibles)
             
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
             stock_min = st.number_input("Stock Mínimo de Alerta", min_value=0, value=5)
@@ -340,7 +348,7 @@ def modulo_productos():
                         VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min, activo_bool, unidad_medida, descripcion, usuario_actual))
                     
-                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente.")
+                    st.success(f"¡{nombre}! Ha sido creado exitosamente.")
                     st.balloons()
                 except Exception as e:
                     st.error(f"❌ Error al guardar en PostgreSQL: {e}")
@@ -371,17 +379,40 @@ def modulo_productos():
             cat_input = st.text_input("Nombre de la Categoría", key="pestaña_txt_cat")
             if st.button("💾 Guardar Categoría", key="pestaña_btn_cat"):
                 if cat_input.strip():
-                    # Forzamos a que si falla, tire el error en la pantalla completa
-                    execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (cat_input.strip(),))
-                    st.success(f"✅ Intentado guardar: '{cat_input.strip()}'.")
+                    nombre_limpio = cat_input.strip()
+                    existencia = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
+                    if not existencia:
+                        # Guardamos en la base de datos
+                        execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nombre_limpio,))
+                        # Actualizamos la memoria intermedia de inmediato
+                        st.session_state.lista_categorias.append(nombre_limpio)
+                        st.session_state.lista_categorias.sort()
+                        st.success(f"✅ Categoría '{nombre_limpio}' guardada con éxito.")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Esta categoría ya existe.")
+                else:
+                    st.error("Escribe un nombre válido.")
                     
         with col_mar:
             st.markdown("### 🆕 Crear Nueva Marca")
             marca_input = st.text_input("Nombre de la Marca", key="pestaña_txt_marca")
             if st.button("💾 Guardar Marca", key="pestaña_btn_marca"):
                 if marca_input.strip():
-                    execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (marca_input.strip(),))
-                    st.success(f"✅ Intentado guardar: '{marca_input.strip()}'.")
+                    nombre_limpio = marca_input.strip()
+                    existencia = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
+                    if not existencia:
+                        # Guardamos en la base de datos
+                        execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nombre_limpio,))
+                        # Actualizamos la memoria intermedia de inmediato
+                        st.session_state.lista_marcas.append(nombre_limpio)
+                        st.session_state.lista_marcas.sort()
+                        st.success(f"✅ Marca '{nombre_limpio}' guardada con éxito.")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Esta marca ya existe.")
+                else:
+                    st.error("Escribe un nombre válido.")
 def modulo_compras():
     """Gestión de compras"""
     st.title("🚚 Compras")
