@@ -43,9 +43,17 @@ DB_CONFIG = {
 
 @st.cache_resource
 def get_db_connection():
-    """Obtener conexión a PostgreSQL"""
+    """Obtener conexión fresca a PostgreSQL (Neon) sin riesgo de cierres por inactividad"""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        # Volvemos a armar el diccionario asegurando que el puerto sea un entero
+        config = {
+            'host': os.getenv('DB_HOST'),
+            'database': os.getenv('DB_NAME'),
+            'user': os.getenv('DB_USER'),
+            'password': os.getenv('DB_PASSWORD'),
+            'port': int(os.getenv('DB_PORT', 5432))
+        }
+        conn = psycopg2.connect(**config)
         return conn
     except Exception as e:
         st.error(f"Error conectando a BD: {e}")
