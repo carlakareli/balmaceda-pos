@@ -213,7 +213,7 @@ def dashboard():
         st.dataframe(df, use_container_width=True)
 
 def modulo_productos():
-    """Gestión de productos con validaciones estrictas y actualización instantánea de listas"""
+    """Gestión de productos con listas desplegables siempre activas y resistentes"""
     st.title("📦 Productos")
     
     tab1, tab2, tab3 = st.tabs(["Listar", "Crear", "Buscar"])
@@ -249,7 +249,6 @@ def modulo_productos():
                 nueva_cat = st.text_input("Nombre de la Categoría", key="txt_nueva_cat")
                 if st.button("Guardar Categoría", key="btn_guardar_cat"):
                     if nueva_cat.strip():
-                        # Conexión fresca y directa
                         existe_cat = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nueva_cat.strip(),), fetch=True)
                         if not existe_cat:
                             execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nueva_cat.strip(),))
@@ -264,7 +263,6 @@ def modulo_productos():
                 nueva_marca = st.text_input("Nombre de la Marca", key="txt_nueva_marca")
                 if st.button("Guardar Marca", key="btn_guardar_marca"):
                     if nueva_marca.strip():
-                        # Conexión fresca y directa
                         existe_marca = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nueva_marca.strip(),), fetch=True)
                         if not existe_marca:
                             execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nueva_marca.strip(),))
@@ -335,23 +333,22 @@ def modulo_productos():
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # CONSULTA FRESCA DE CATEGORÍAS: Se ejecuta de forma independiente al renderizar la lista
-            categoria_opt = execute_query("SELECT id, nombre FROM categorias ORDER BY nombre", fetch=True)
+            # --- CONSULTA FLEXIBLE DE CATEGORÍAS (NUNCA SE BLOQUEA) ---
+            categoria_opt = execute_query("SELECT nombre FROM categorias ORDER BY nombre", fetch=True)
             listado_cats = [c['nombre'] for c in categoria_opt] if categoria_opt else []
             
-            if listado_cats:
-                categoria = st.selectbox("Categoría", listado_cats)
-            else:
-                categoria = st.selectbox("Categoría", ["-- Primero añade una categoría arriba --"], disabled=True)
+            # Si la lista está vacía por temas de red, damos una opción por defecto sin deshabilitar
+            if not listado_cats:
+                listado_cats = ["⚠️ No hay categorías creadas arriba aún"]
+            categoria = st.selectbox("Categoría", listado_cats)
             
-            # CONSULTA FRESCA DE MARCAS: Se ejecuta de forma independiente al renderizar la lista
-            marca_opt = execute_query("SELECT id, nombre FROM marcas ORDER BY nombre", fetch=True)
+            # --- CONSULTA FLEXIBLE DE MARCAS (NUNCA SE BLOQUEA) ---
+            marca_opt = execute_query("SELECT nombre FROM marcas ORDER BY nombre", fetch=True)
             listado_marcas = [m['nombre'] for m in marca_opt] if marca_opt else []
             
-            if listado_marcas:
-                marca = st.selectbox("Marca", listado_marcas)
-            else:
-                marca = st.selectbox("Marca", ["-- Primero añade una marca arriba --"], disabled=True)
+            if not listado_marcas:
+                listado_marcas = ["⚠️ No hay marcas creadas arriba aún"]
+            marca = st.selectbox("Marca", listado_marcas)
             
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
             stock_min = st.number_input("Stock Mínimo de Alerta", min_value=0, value=5)
@@ -377,15 +374,14 @@ def modulo_productos():
                 st.error("❌ El Código de Barras es obligatorio.")
             elif not nombre:
                 st.error("❌ El Nombre del Producto es obligatorio y no puede quedar vacío.")
-            elif not listado_cats or "--" in categoria:
-                st.error("❌ Debe seleccionar una Categoría válida. Si no la encuentras, créala primero en la sección superior.")
-            elif not listado_marcas or "--" in marca:
-                st.error("❌ Debe seleccionar una Marca válida. Si no la encuentras, créala primero en la sección superior.")
+            elif "⚠️" in categoria or not listado_cats:
+                st.error("❌ Debe seleccionar una Categoría válida. Créala primero en la sección superior.")
+            elif "⚠️" in marca or not listado_marcas:
+                st.error("❌ Debe seleccionar una Marca válida. Créala primero en la sección superior.")
             elif precio_venta <= 0:
                 st.error("❌ El Precio de Venta debe ser mayor a cero ($).")
             else:
                 try:
-                    # Confirmación de no duplicación final
                     duplicado = execute_query("SELECT id FROM productos WHERE codigo_barras = %s", (codigo,), fetch=True)
                     if duplicado:
                         st.error("❌ Error: Ese código de barras ya fue guardado hace instantes.")
