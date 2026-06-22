@@ -262,7 +262,6 @@ def modulo_productos():
     with tab2:
         st.subheader("Crear Nuevo Producto")
         
-        # --- SECCIÓN DE ESCANEO OPCIONAL ---
         col_cod1, col_cod2 = st.columns([3, 1])
         with col_cod1:
             codigo_raw = st.text_input("Código de Barras", placeholder="Escanea o escribe manualmente...", key="input_codigo_maestro")
@@ -310,7 +309,6 @@ def modulo_productos():
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # Mapeo seguro de diccionarios asegurando que cumplan el formato [{'id': ..., 'nombre': ...}]
             cats_dict = {c['nombre']: c['id'] for c in st.session_state.lista_categorias if isinstance(c, dict) and 'nombre' in c}
             categoria_sel = st.selectbox("Categoría", list(cats_dict.keys()) if cats_dict else ["⚠️ No hay categorías. Ve a la pestaña 4."])
             
@@ -352,7 +350,7 @@ def modulo_productos():
                         
                         execute_query("""
                             INSERT INTO productos 
-                            (codigo_barras, nombre, descripcion, marca_id, categoria_id, unit_medida_id, 
+                            (codigo_barras, nombre, descripcion, marca_id, categoria_id, unidad_medida_id, 
                              precio_compra_actual, precio_venta_actual, stock_actual, stock_minimo, activo, fecha_creacion, fecha_modificacion)
                             VALUES (%s, %s, %s, %s, %s, %s, 0.0, %s, 0, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """, (codigo, nombre, desc_text, marca_id, cat_id, unidad_id, precio_venta, stock_min, activo_bool))
@@ -381,43 +379,55 @@ def modulo_productos():
 
     with tab4:
         st.subheader("📁 Administración de Categorías y Marcas")
+        
+        # VISOR EN TIEMPO REAL DE LO QUE YA EXISTE EN NEON
+        st.markdown("### 📊 Elementos actuales en la Base de Datos")
+        col_v1, col_v2 = st.columns(2)
+        with col_v1:
+            nombres_cats = [c['nombre'] for c in st.session_state.lista_categorias if isinstance(c, dict)]
+            st.caption(f"**Categorías ({len(nombres_cats)}):** " + ", ".join(nombres_cats))
+        with col_v2:
+            nombres_marcas = [m['nombre'] for m in st.session_state.lista_marcas if isinstance(m, dict)]
+            st.caption(f"**Marcas ({len(nombres_marcas)}):** " + ", ".join(nombres_marcas))
+            
+        st.markdown("---")
         col_cat, col_mar = st.columns(2)
         
         with col_cat:
             st.markdown("### 🆕 Crear Nueva Categoría")
             cat_input = st.text_input("Nombre de la Categoría", key="pestaña_txt_cat")
-            if st.button("💾 Guardar Categoría", key="pestaña_btn_cat"):
+            if st.button("💾 Guardar Categoría", key="pestaña_btn_cat", type="primary"):
                 if cat_input.strip():
                     nombre_limpio = cat_input.strip()
                     existencia = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
                     if not existencia:
-                        execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (nombre_limpio,))
-                        # RE-INITIALIZE CON FORMATO DE DICCIONARIO CORRECTO
+                        # Forzamos las columnas por defecto para que Neon no bote el query
+                        execute_query("INSERT INTO categorias (nombre, activo, descripcion) VALUES (%s, true, 'Creada desde la App')", (nombre_limpio,))
+                        # Traemos la lista limpia actualizada al instante
                         cats_nuevas = execute_query("SELECT id, nombre FROM categorias WHERE activo = true ORDER BY nombre", fetch=True)
                         st.session_state.lista_categorias = cats_nuevas if cats_nuevas else []
-                        st.success(f"✅ Categoría '{nombre_limpio}' guardada con éxito.")
+                        st.success(f"✅ ¡Categoría '{nombre_limpio}' guardada con éxito!")
                         st.rerun()
                     else:
-                        st.warning("⚠️ Esta categoría ya existe.")
+                        st.warning("⚠️ Esta categoría ya existe en Neon.")
                 else:
                     st.error("Escribe un nombre válido.")
                     
         with col_mar:
             st.markdown("### 🆕 Crear Nueva Marca")
             marca_input = st.text_input("Nombre de la Marca", key="pestaña_txt_marca")
-            if st.button("💾 Guardar Marca", key="pestaña_btn_marca"):
+            if st.button("💾 Guardar Marca", key="pestaña_btn_marca", type="primary"):
                 if marca_input.strip():
                     nombre_limpio = marca_input.strip()
                     existencia = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (nombre_limpio,), fetch=True)
                     if not existencia:
-                        execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (nombre_limpio,))
-                        # RE-INITIALIZE CON FORMATO DE DICCIONARIO CORRECTO
+                        execute_query("INSERT INTO marcas (nombre, activo) VALUES (%s, true)", (nombre_limpio,))
                         marcas_nuevas = execute_query("SELECT id, nombre FROM marcas WHERE activo = true ORDER BY nombre", fetch=True)
                         st.session_state.lista_marcas = marcas_nuevas if marcas_nuevas else []
-                        st.success(f"✅ Marca '{nombre_limpio}' guardada con éxito.")
+                        st.success(f"✅ ¡Marca '{nombre_limpio}' guardada con éxito!")
                         st.rerun()
                     else:
-                        st.warning("⚠️ Esta marca ya existe.")
+                        st.warning("⚠️ Esta marca ya existe en Neon.")
                 else:
                     st.error("Escribe un nombre válido.")
 def modulo_compras():
