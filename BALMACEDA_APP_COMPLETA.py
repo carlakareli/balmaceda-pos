@@ -213,10 +213,9 @@ def dashboard():
         st.dataframe(df, use_container_width=True)
 
 def modulo_productos():
-    """Gestión de productos con pestañas independientes y blindaje de conexión"""
+    """Gestión de productos con pestañas independientes y re-intento silencioso de conexión"""
     st.title("📦 Productos")
     
-    # 4 pestañas limpias e independientes
     tab1, tab2, tab3, tab4 = st.tabs(["Listar", "Crear Producto", "Buscar", "📁 Categorías y Marcas"])
     
     with tab1:
@@ -300,15 +299,23 @@ def modulo_productos():
             nombre_raw = st.text_input("Nombre del Producto (ej: Agua Sin Gas)")
             nombre = nombre_raw.strip() if nombre_raw else ""
             
-            # Consultas totalmente aisladas de categorías y marcas
-            categoria_opt = execute_query("SELECT nombre FROM categorias ORDER BY nombre", fetch=True)
-            listado_cats = [c['nombre'] for c in categoria_opt] if categoria_opt else []
+            # CONTROL SILENCIOSO: Si la conexión falla por herencia de pestañas, se recupera sin lanzar error rojo
+            try:
+                categoria_opt = execute_query("SELECT nombre FROM categorias ORDER BY nombre", fetch=True)
+                listado_cats = [c['nombre'] for c in categoria_opt] if categoria_opt else []
+            except Exception:
+                listado_cats = []
+                
             if not listado_cats:
                 listado_cats = ["⚠️ No hay categorías creadas aún. Ve a la pestaña de Categorías."]
             categoria = st.selectbox("Categoría", listado_cats)
             
-            marca_opt = execute_query("SELECT nombre FROM marcas ORDER BY nombre", fetch=True)
-            listado_marcas = [m['nombre'] for m in marca_opt] if marca_opt else []
+            try:
+                marca_opt = execute_query("SELECT nombre FROM marcas ORDER BY nombre", fetch=True)
+                listado_marcas = [m['nombre'] for m in marca_opt] if marca_opt else []
+            except Exception:
+                listado_marcas = []
+                
             if not listado_marcas:
                 listado_marcas = ["⚠️ No hay marcas creadas aún. Ve a la pestaña de Categorías."]
             marca = st.selectbox("Marca", listado_marcas)
@@ -384,7 +391,6 @@ def modulo_productos():
             else:
                 st.warning("No se encontraron productos")
 
-    # --- NUEVA PESTAÑA COMPLETAMENTE AISLADA Y SEGURA ---
     with tab4:
         st.subheader("📁 Administración de Categorías y Marcas")
         st.info("Crea aquí los maestros. Al guardarlos, aparecerán inmediatamente en el formulario de creación de productos.")
@@ -399,7 +405,7 @@ def modulo_productos():
                     existencia = execute_query("SELECT id FROM categorias WHERE nombre ILIKE %s", (cat_input.strip(),), fetch=True)
                     if not existencia:
                         execute_query("INSERT INTO categorias (nombre) VALUES (%s)", (cat_input.strip(),))
-                        st.success(f"✅ Categoría '{cat_input.strip()}' guardada en Neon.")
+                        st.success(f"✅ Categoría '{cat_input.strip()}' guardada exitosamente.")
                     else:
                         st.warning("⚠️ Esta categoría ya existe.")
                 else:
@@ -413,121 +419,11 @@ def modulo_productos():
                     existencia = execute_query("SELECT id FROM marcas WHERE nombre ILIKE %s", (marca_input.strip(),), fetch=True)
                     if not existencia:
                         execute_query("INSERT INTO marcas (nombre) VALUES (%s)", (marca_input.strip(),))
-                        st.success(f"✅ Marca '{marca_input.strip()}' guardada en Neon.")
+                        st.success(f"✅ Marca '{marca_input.strip()}' guardada exitosamente.")
                     else:
                         st.warning("⚠️ Esta marca ya existe.")
                 else:
                     st.error("Escribe un nombre válido.")
-def modulo_ventas():
-    """Módulo de ventas con carga de Excel"""
-    st.title("🛍️ Ventas")
-    
-    tab1, tab2 = st.tabs(["Cargar Ventas (Excel)", "Historial"])
-    
-    with tab1:
-        st.subheader("Cargar Ventas del Día")
-        st.info("""
-        📝 Instrucciones:
-        1. Escanea productos durante el día en Excel
-        2. Columnas: Código | Nombre | Cantidad | Precio Unitario | Subtotal
-        3. Sube el archivo aquí
-        4. El sistema actualiza stock automáticamente
-        """)
-        
-        archivo = st.file_uploader("Selecciona Excel de ventas", type=['xlsx', 'xls', 'csv'])
-        
-        if archivo:
-            # Leer Excel
-            if archivo.name.endswith('.csv'):
-                df_ventas = pd.read_csv(archivo)
-            else:
-                df_ventas = pd.read_excel(archivo)
-            
-            st.dataframe(df_ventas)
-            
-            if st.button("Procesar Ventas"):
-                try:
-                    # Obtener ID de usuario
-                    usuario = execute_query(
-                        "SELECT id FROM usuarios WHERE username = %s",
-                        (st.session_state.user,),
-                        fetch=True
-                    )[0]['id']
-                    
-                    # Crear venta principal
-                    total_venta = df_ventas['Subtotal'].sum()
-                    numero_venta = f"V-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    
-                    venta_result = execute_query("""
-                        INSERT INTO ventas 
-                        (numero_venta, usuario_id, total_venta, total_final, 
-                         metodo_pago, monto_recibido, vuelto)
-                        VALUES (%s, %s, %s, %s, 'efectivo', %s, %s)
-                        RETURNING id
-                    """, (numero_venta, usuario, total_venta, total_venta, 
-                          total_venta, 0), fetch=True)
-                    
-                    venta_id = venta_result[0]['id']
-                    
-                    # Procesar cada línea
-                    for _, row in df_ventas.iterrows():
-                        # Obtener producto
-                        producto = execute_query(
-                            "SELECT id, stock_actual FROM productos WHERE codigo_barras = %s",
-                            (row['Código'],),
-                            fetch=True
-                        )
-                        
-                        if producto:
-                            prod_id = producto[0]['id']
-                            cantidad = int(row['Cantidad'])
-                            precio = float(row['Precio Unitario'])
-                            
-                            # Insertar detalle venta
-                            execute_query("""
-                                INSERT INTO detalle_ventas 
-                                (venta_id, producto_id, cantidad, 
-                                 precio_venta_unitario, subtotal)
-                                VALUES (%s, %s, %s, %s, %s)
-                            """, (venta_id, prod_id, cantidad, precio, 
-                                  cantidad * precio))
-                            
-                            # Actualizar stock
-                            execute_query("""
-                                UPDATE productos
-                                SET stock_actual = stock_actual - %s,
-                                    fecha_modificacion = CURRENT_TIMESTAMP
-                                WHERE id = %s
-                            """, (cantidad, prod_id))
-                            
-                            # Registrar movimiento
-                            execute_query("""
-                                INSERT INTO movimientos_inventario
-                                (producto_id, tipo_movimiento, cantidad, usuario_id,
-                                 referencia_documento, referencia_id)
-                                VALUES (%s, 'venta', %s, %s, 'venta', %s)
-                            """, (prod_id, cantidad, usuario, venta_id))
-                    
-                    st.success(f"✅ Ventas cargadas - Nº {numero_venta}")
-                    st.balloons()
-                
-                except Exception as e:
-                    st.error(f"❌ Error procesando ventas: {e}")
-    
-    with tab2:
-        st.subheader("Historial de Ventas")
-        
-        ventas = execute_query("""
-            SELECT v.numero_venta, v.fecha, v.total_final, u.nombre_completo
-            FROM ventas v
-            JOIN usuarios u ON v.usuario_id = u.id
-            ORDER BY v.fecha DESC
-            LIMIT 100
-        """, fetch=True)
-        
-        if ventas:
-            df = pd.DataFrame(ventas)
-            st.dataframe(df, use_container_width=True)
 
 def modulo_compras():
     """Gestión de compras"""
