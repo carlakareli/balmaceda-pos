@@ -230,9 +230,13 @@ def modulo_productos():
     with tab2:
         st.subheader("Crear Nuevo Producto")
         
-        # --- ESCÁNER CON CÁMARA PARA TABLET (JAVASCRIPT NATIVO) ---
+        # Inicializar una variable limpia en la memoria de la sesión para el código
+        if "codigo_escaneado_camara" not in st.session_state:
+            st.session_state["codigo_escaneado_camara"] = ""
+
         st.markdown("### 📷 Escanear Código con la Cámara")
         
+        # HTML/JavaScript corregido para usar la API de mensajes de Streamlit correctamente
         componente_camara = """
         <div style="width: 100%; max-width: 400px; margin: 0 auto;">
             <div id="lector-camara" style="width: 100%; background: #1e1e1e; border-radius: 8px;"></div>
@@ -240,34 +244,37 @@ def modulo_productos():
         <script src="https://unpkg.com/html5-qrcode"></script>
         <script>
             function onScanSuccess(decodedText, decodedResult) {
-                // Envía el código de barras detectado directamente a Streamlit
-                window.parent.postMessage({type: 'streamlit:setComponentValue', value: decodedText}, '*');
-                // Detiene la cámara temporalmente para confirmar la lectura
+                // Truco técnico: Enviar el código simulando un evento que Streamlit sí entiende en el árbol de HTML
+                const inputElement = window.parent.document.querySelector('input[aria-label="Código de Barras"]');
+                if (inputElement) {
+                    inputElement.value = decodedText;
+                    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                    inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                    // Alternativa si no encuentra el foco directo
+                    window.parent.postMessage({type: 'streamlit:setComponentValue', value: decodedText}, '*');
+                }
                 html5QrcodeScanner.clear();
             }
             
-            // Configuración optimizada para capturar códigos de barra de consumo masivo
             let config = { fps: 15, qrbox: {width: 280, height: 160} };
             let html5QrcodeScanner = new Html5QrcodeScanner("lector-camara", config, false);
             html5QrcodeScanner.render(onScanSuccess);
         </script>
         """
         
-        # Renderizar el lector de cámara web/tablet
         import streamlit.components.v1 as components
-        codigo_detectado = components.html(componente_camara, height=330)
+        # Renderizamos la cámara fijando el valor capturado de forma independiente
+        components.html(componente_camara, height=330)
         
         st.markdown("---")
         st.markdown("### 📝 Datos de la Ficha del Producto")
         
-        # Cargar el código capturado por la cámara en el estado de la sesión si existe
-        if codigo_detectado:
-            st.session_state["input_codigo_maestro"] = str(codigo_detectado)
-            
         col1, col2 = st.columns(2)
         
         with col1:
-            codigo = st.text_input("Código de Barras", key="input_codigo_maestro")
+            # Ahora el campo está limpio. Si la cámara escribe, aparecerá aquí; si no, digitas tú sin DeltaGenerators.
+            codigo = st.text_input("Código de Barras", placeholder="Escanea o escribe manualmente...")
             nombre = st.text_input("Nombre del Producto (ej: Detergente Líquido 3L)")
             
         with col2:
@@ -277,7 +284,6 @@ def modulo_productos():
             marca_opt = execute_query("SELECT id, nombre FROM marcas", fetch=True)
             marca = st.selectbox("Marca", [m['nombre'] for m in marca_opt] if marca_opt else [])
         
-        # Formulario Limpio: Únicamente precio de venta al público y el umbral de alerta de stock
         col3, col4 = st.columns(2)
         with col3:
             precio_venta = st.number_input("Precio de Venta al Público ($)", min_value=0.0, step=50.0)
@@ -289,11 +295,9 @@ def modulo_productos():
                 st.error("❌ El Código de Barras y el Nombre del Producto son campos obligatorios.")
             else:
                 try:
-                    # Obtener llaves foráneas de categorías y marcas
                     cat_id = execute_query("SELECT id FROM categorias WHERE nombre = %s", (categoria,), fetch=True)[0]['id']
                     marca_id = execute_query("SELECT id FROM marcas WHERE nombre = %s", (marca,), fetch=True)[0]['id']
                     
-                    # Insertar producto inicializando stock y costo en 0 (Se gestionarán en el módulo de Compras)
                     execute_query("""
                         INSERT INTO productos 
                         (codigo_barras, nombre, categoria_id, marca_id, 
@@ -301,7 +305,7 @@ def modulo_productos():
                         VALUES (%s, %s, %s, %s, 0.0, %s, 0, %s, true)
                     """, (codigo, nombre, cat_id, marca_id, precio_venta, stock_min))
                     
-                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente con stock inicial en cero.")
+                    st.success(f"✅ ¡{nombre}! Ha sido creado exitosamente.")
                     st.balloons()
                 except Exception as e:
                     st.error(f"❌ Error al guardar en PostgreSQL: {e}")
@@ -325,7 +329,6 @@ def modulo_productos():
                 st.dataframe(df, use_container_width=True)
             else:
                 st.warning("No se encontraron productos")
-
 def modulo_ventas():
     """Módulo de ventas con carga de Excel"""
     st.title("🛍️ Ventas")
